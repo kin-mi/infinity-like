@@ -1,43 +1,48 @@
-'use strict';
-
-// Content script file will run in the context of web page.
-// With content script you can manipulate the web pages using
-// Document Object Model (DOM).
-// You can also pass information to the parent extension.
-
-// We execute this script by making an entry in manifest.json file
-// under `content_scripts` property
-
-// For more information on Content Scripts,
-// See https://developer.chrome.com/extensions/content_scripts
-
-// Log `title` of current active web page
-const pageTitle = document.head.getElementsByTagName('title')[0].innerHTML;
-console.log(
-  `Page title is: '${pageTitle}' - evaluated by Chrome extension's 'contentScript.js' file`
-);
-
-// Communicate with background file by sending a message
-chrome.runtime.sendMessage(
-  {
-    type: 'GREETINGS',
-    payload: {
-      message: 'Hello, my name is Con. I am from ContentScript.',
-    },
-  },
-  response => {
-    console.log(response.message);
+'use strict'
+const observedElements = []
+// ドキュメント自体の変更を監視
+const documentObserver = () => {
+  const option = { childList: true, subtree: true }
+  const observer = new MutationObserver(findLikesListener)
+  observer.observe(document.body, option)
+}
+const findLikesListener = () => {
+  // RTやいいねのラッパー要素
+  const elements = document.getElementsByClassName('r-1mdbhws')
+  Array.from(elements).forEach((element) => {
+    // いいね数の要素
+    const target =
+      element.childNodes[2].firstChild.firstChild.lastChild.firstChild
+    // いいね数0の場合、要素無しの為除外
+    if (target.nodeName === 'SPAN' && !observedElements.includes(target)) {
+      const option = {
+        subtree: true,
+        characterData: true,
+        characterDataOldValue: true,
+      }
+      const observer = new MutationObserver(function (mutations) {
+        observer.disconnect()
+        mutations.forEach((mutation) => CountUp(mutation))
+        observer.observe(target, option)
+      })
+      observer.observe(target, option)
+      observedElements.push(target)
+    }
+  })
+}
+function CountUp(mutation) {
+  const oldValue = String(mutation.oldValue)
+  const newValue = String(mutation.target.textContent)
+  const formatOldValue = oldValue.split(',').join('')
+  const formatNewValue = newValue.split(',').join('')
+  // 末尾が数字じゃない場合は何もしない（例：1万）
+  if (isNaN(oldValue.slice(-1)) && isNaN(newValue.slice(-1))) {
+    return
   }
-);
-
-// Listen for message
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'COUNT') {
-    console.log(`Current count is ${request.payload.count}`);
-  }
-
-  // Send an empty response
-  // See https://github.com/mozilla/webextension-polyfill/issues/130#issuecomment-531531890
-  sendResponse({});
-  return true;
-});
+  // newValueの方が大きい場合は何もしない
+  if (formatNewValue > formatOldValue) return
+  mutation.target.textContent = Number(
+    Number(formatOldValue) + 1
+  ).toLocaleString()
+}
+documentObserver()
